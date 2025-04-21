@@ -1,0 +1,6 @@
+praw==7.8.1
+selenium==4.18.1
+PyYAML==6.0.1
+gtts==2.5.1
+python-dateutil==2.8.2
+webdriver-manager==4.0.1 

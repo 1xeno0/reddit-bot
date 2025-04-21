@@ -1,0 +1,8 @@
+assets/
+labels/
+output/
+story_configs/
+temp/
+video_configs/
+*.pyc
+.DS_Store

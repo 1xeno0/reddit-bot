@@ -1,0 +1,21 @@
+{
+    "main_text": "this text will be replaced by story text",
+    "title_text": "this text will be replaced by story title",
+    "video_output_path": "output/something.mp4",
+    "background_clips_folder": "assets/backgrounds/minecraft/parkour1/",
+    "temp_voices_folder": "temp/voices",
+    "temp_audio_folder": "temp/audio",
+    "capitalize": false,
+    "audio_temp_name": "temp.mp3",
+    "pause_duration": 1,
+    "background_audio_path": "",
+    "voice_name": "random",
+    "voice_title_output_name": "title.mp3",
+    "voice_text_output_name": "text.mp3",
+    "label_name": "label_1",
+    "font_path": "assets/fonts/roboto.ttf",
+    "font_size": 36,
+    "color": "white",
+    "position": "center",
+    "caption_box_width": 864
+} 
