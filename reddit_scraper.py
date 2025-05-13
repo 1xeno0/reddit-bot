@@ -126,6 +126,9 @@ class RedditScraper:
                 
                 # Get post content
                 content = self._get_post_content(post_url)
+
+                if post_data['score'] < self.config['scraping']['min_score']:
+                    continue
                 
                 processed_post = {
                     'title': post_data['title'],

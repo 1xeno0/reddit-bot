@@ -6,3 +6,4 @@ temp/
 video_configs/
 *.pyc
 .DS_Store
+config.py

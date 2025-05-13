@@ -6,6 +6,9 @@ from flask_cors import CORS
 
 import json
 import os
+import glob
+import shutil
+import re
 
 class Config:
     def __init__(self, config_path):
@@ -182,7 +185,7 @@ def update_video_config(video_config_filename):
     video_config.update_config(
         main_text=data["main_text"], 
         title_text=data["title_text"], 
-        video_output_path=data["video_output_path"], 
+        video_output_path="output/" + data["video_output_path"] if "output/" not in data["video_output_path"] else data["video_output_path"], 
         background_clips_folder=data["background_clips_folder"], 
         temp_voices_folder=data["temp_voices_folder"], 
         temp_audio_folder=data["temp_audio_folder"], 
@@ -216,44 +219,130 @@ def get_video(video_output_path):
         app.logger.error(f"Video not found: {video_output_path}")
         return jsonify({"error": f"Video file not found: {video_output_path}"}), 404
 
+def cleanup_temp_files():
+    """Clean up temporary files that might be created in the main directory."""
+    # Check for temp files in main directory and move them to temp folder
+    temp_patterns = [
+        "*TEMP_MPY*", "*temp*", "*_without_captions*", 
+        "*.mpy", "*.m4a", "*_TEMP_*", "*.wav.tmp*",
+        "*.wav", "*.mp3.tmp*", "*_*_*_*-*-*-"
+    ]
+    
+    print("Cleaning up temporary files...")
+    cleanup_dir = os.path.join("temp", "cleanup")
+    os.makedirs(cleanup_dir, exist_ok=True)
+    
+    # Current working directory files that match patterns
+    for pattern in temp_patterns:
+        for file in glob.glob(pattern):
+            try:
+                if os.path.isfile(file) and not file.startswith(("output/", "temp/", "assets/")):
+                    target_path = os.path.join(cleanup_dir, os.path.basename(file))
+                    print(f"Moving temporary file {file} to {target_path}")
+                    # If the file is in use, this might fail, so we try a copy+delete approach
+                    try:
+                        shutil.move(file, target_path)
+                    except:
+                        try:
+                            shutil.copy2(file, target_path)
+                            try:
+                                os.remove(file)
+                            except:
+                                print(f"Couldn't delete {file}, will try again later")
+                        except Exception as e:
+                            print(f"Couldn't copy {file}: {e}")
+            except Exception as e:
+                print(f"Error handling {file}: {e}")
+    
+    print("Cleanup completed")
+
 @app.route('/generate_video', methods=['POST'])
 def generate_video():
-    data = request.json
-    story_filename = data["story_filename"]
-    video_filename = data["video_filename"]
-    story_config = StoryConfig(os.path.join("story_configs", story_filename))
-    video_config = VideoConfig(os.path.join("video_configs", video_filename))
+    try:
+        # Set up temp directory environment variable 
+        # (must be set each time because Flask may create a new process)
+        temp_dir = os.path.abspath("temp")
+        os.makedirs(temp_dir, exist_ok=True)
+        os.environ['MOVIEPY_TEMP_DIR'] = temp_dir
+        os.environ['TMPDIR'] = temp_dir
+        
+        # First clean up any temp files from previous runs
+        cleanup_temp_files()
+        
+        data = request.json
+        story_filename = data["story_filename"]
+        video_filename = data["video_filename"]
+        
+        # Get CPU count for optimal parallel processing
+        import multiprocessing
+        cpu_count = multiprocessing.cpu_count()
+        max_workers = min(cpu_count, 8)  # Use up to 8 workers or available CPUs, whichever is less
+        print(f"Using {max_workers} workers for parallel processing (from {cpu_count} available CPUs)")
+        
+        # Check if fast mode is requested
+        fast_mode = data.get("fast_mode", True)  # Default to True for maximum speed
+        print(f"Fast mode is {'enabled' if fast_mode else 'disabled'}")
+        
+        story_config = StoryConfig(os.path.join("story_configs", story_filename))
+        video_config = VideoConfig(os.path.join("video_configs", video_filename))
 
-    video_config.update_config_by_key("main_text", story_config.config["content"])
-    video_config.update_config_by_key("title_text", story_config.config["title"])
-    video_config.update_config_by_key("video_output_path", data["story_filename"] + ".mp4")
+        # Make sure output directory exists
+        os.makedirs("output", exist_ok=True)
+        
+        output_filename = data["story_filename"].split(".")[0] + ".mp4"
+        video_output_path = os.path.join("output", output_filename)
+        
+        video_config.update_config_by_key("main_text", story_config.config["content"])
+        video_config.update_config_by_key("title_text", story_config.config["title"])
+        video_config.update_config_by_key("video_output_path", video_output_path)
 
-    generate_video_as_function(
-        video_config.config["main_text"],
-        video_config.config["title_text"],
-        video_config.config["video_output_path"],
-        video_config.config["background_clips_folder"],
-        video_config.config["temp_voices_folder"],
-        video_config.config["temp_audio_folder"],
-        video_config.config["capitalize"],
-        video_config.config["audio_temp_name"],
-        video_config.config["pause_duration"],
-        video_config.config["background_audio_path"],
-        video_config.config["voice_name"],
-        video_config.config["voice_title_output_name"],
-        video_config.config["voice_text_output_name"],
-        video_config.config["label_name"],
-        video_config.config["font_path"],
-        video_config.config["font_size"],
-        video_config.config["color"],
-        video_config.config["position"],
-        video_config.config["caption_box_width"]
-    )
+        # Start time for performance measurement
+        import time
+        start_time = time.time()
+        
+        generate_video_as_function(
+            video_config.config["main_text"],
+            video_config.config["title_text"],
+            video_config.config["video_output_path"],
+            video_config.config["background_clips_folder"],
+            video_config.config["temp_voices_folder"],
+            video_config.config["temp_audio_folder"],
+            video_config.config["capitalize"],
+            video_config.config["audio_temp_name"],
+            video_config.config["pause_duration"],
+            video_config.config["background_audio_path"],
+            video_config.config["voice_name"],
+            video_config.config["voice_title_output_name"],
+            video_config.config["voice_text_output_name"],
+            video_config.config["label_name"],
+            video_config.config["font_path"],
+            video_config.config["font_size"],
+            video_config.config["color"],
+            video_config.config["position"],
+            video_config.config["caption_box_width"],
+            max_workers=max_workers,  # Pass the optimal number of workers
+            fast_mode=fast_mode       # Pass fast mode setting
+        )
+        
+        # Calculate and log the time taken
+        elapsed_time = time.time() - start_time
+        print(f"Video generation completed in {elapsed_time:.2f} seconds")
+        
+        # Clean up again after generation
+        cleanup_temp_files()
 
-    return jsonify({
-        "message": "Video generated successfully", 
-        "video_output_path": "output/" + video_config.config["video_output_path"]
-    })
+        return jsonify({
+            "message": "Video generated successfully", 
+            "video_output_path": video_config.config["video_output_path"],
+            "generation_time": f"{elapsed_time:.2f} seconds"
+        })
+    except Exception as e:
+        # Clean up on error too
+        cleanup_temp_files()
+        app.logger.error(f"Error generating video: {str(e)}")
+        import traceback
+        app.logger.error(traceback.format_exc())
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/get_all_videos', methods=['GET'])
 def get_all_videos():
